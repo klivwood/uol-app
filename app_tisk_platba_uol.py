@@ -10,20 +10,9 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.block-container {
-    padding-top: 1rem;
-    max-width: 1100px;
-}
-
-h1 {
-    text-align: center;
-    font-size: 46px !important;
-}
-
-h2, h3 {
-    text-align: center;
-    font-size: 30px !important;
-}
+.block-container { padding-top: 1rem; max-width: 1100px; }
+h1 { text-align: center; font-size: 46px !important; }
+h2, h3 { text-align: center; font-size: 30px !important; }
 
 .stButton > button,
 .stLinkButton > a {
@@ -32,15 +21,6 @@ h2, h3 {
     font-size: 28px;
     font-weight: 800;
     border-radius: 18px;
-}
-
-[data-testid="stMetricValue"] {
-    font-size: 36px !important;
-    font-weight: 800;
-}
-
-[data-testid="stMetricLabel"] {
-    font-size: 20px !important;
 }
 
 .big-card {
@@ -52,7 +32,6 @@ h2, h3 {
 }
 </style>
 """, unsafe_allow_html=True)
-
 
 # =========================
 # NASTAVENÍ
@@ -66,16 +45,17 @@ headers = {
     "Content-Type": "application/json"
 }
 
-
 # =========================
 # FUNKCE
 # =========================
-def format_kc(castka):
+def format_kc(c):
     try:
-        return f"{float(castka):,.2f} Kč".replace(",", " ")
-    except Exception:
-        return str(castka)
+        return f"{float(c):,.2f} Kč".replace(",", " ")
+    except:
+        return str(c)
 
+def endpoint_podle_typu(typ):
+    return ("sales_invoices", "Faktura") if typ == "Faktura" else ("retails", "Účtenka")
 
 def uol_get_all(endpoint):
     vse = []
@@ -93,18 +73,11 @@ def uol_get_all(endpoint):
         )
 
         if r.status_code != 200:
-            st.error(f"Nepodařilo se načíst {endpoint}: {r.status_code}")
-            st.code(r.text)
+            st.error(f"Chyba: {r.status_code}")
             return pd.DataFrame()
 
         data = r.json()
-
-        if isinstance(data, dict) and "items" in data:
-            items = data["items"]
-        elif isinstance(data, list):
-            items = data
-        else:
-            items = []
+        items = data["items"] if isinstance(data, dict) and "items" in data else data
 
         if not items:
             break
@@ -118,218 +91,129 @@ def uol_get_all(endpoint):
 
     return pd.json_normalize(vse)
 
-
 def vyber_posledni(df):
     if df.empty:
         return None
-
     for col in ["created_at", "updated_at", "issue_date"]:
         if col in df.columns:
             return df.sort_values(col, ascending=False).iloc[0]
-
     return df.iloc[0]
 
-
-def najdi_hodnotu(radek, moznosti, vychozi=""):
+def najdi(radek, moznosti, vychozi=""):
     for m in moznosti:
         if m in radek and pd.notna(radek[m]):
             return radek[m]
     return vychozi
 
+def uloz(radek, typ):
+    doklad_id = najdi(radek, ["id","public_id","invoice_id","retail_id"])
+    cislo = najdi(radek, ["public_id","variable_symbol"], doklad_id)
+    castka = najdi(radek, ["total_amount","amount","price"], "")
+    datum = najdi(radek, ["issue_date","created_at"], "")
 
-def nacti_doklad(typ):
-    if typ == "Faktura":
-        endpoint = "sales_invoices"
-        doklad_typ = "Faktura"
-    else:
-        endpoint = "retails"
-        doklad_typ = "Účtenka"
+    st.session_state.update({
+        "doklad_typ": typ,
+        "doklad_id": str(doklad_id),
+        "cislo": str(cislo),
+        "castka": castka,
+        "datum": str(datum)
+    })
 
+def nacti_posledni(typ):
+    endpoint, t = endpoint_podle_typu(typ)
     df = uol_get_all(endpoint)
     radek = vyber_posledni(df)
+    if radek is not None:
+        uloz(radek, t)
 
-    if radek is None:
-        st.error("Žádný doklad nebyl nalezen.")
-        return
-
-    doklad_id = najdi_hodnotu(
-        radek,
-        [
-            "invoice_id",
-            "retail_id",
-            "sales_retail_id",
-            "gid",
-            "id",
-            "public_id",
-            "variable_symbol",
-        ]
-    )
-
-    cislo = najdi_hodnotu(
-        radek,
-        [
-            "public_id",
-            "variable_symbol",
-            "invoice_id",
-            "retail_id",
-            "sales_retail_id",
-            "gid",
-            "id",
-        ],
-        doklad_id
-    )
-
-    castka = najdi_hodnotu(
-        radek,
-        [
-            "total_amount",
-            "amount",
-            "price",
-            "total_price",
-            "total_price_vat_inclusive",
-        ],
-        ""
-    )
-
-    datum = najdi_hodnotu(
-        radek,
-        [
-            "issue_date",
-            "created_at",
-            "updated_at",
-        ],
-        ""
-    )
-
-    st.session_state["doklad_typ"] = doklad_typ
-    st.session_state["doklad_id"] = str(doklad_id)
-    st.session_state["cislo"] = str(cislo)
-    st.session_state["castka"] = castka
-    st.session_state["datum"] = str(datum)
-
-    st.success(f"Načteno: {doklad_typ} č. {cislo}")
-
+def nacti_seznam(typ):
+    endpoint, _ = endpoint_podle_typu(typ)
+    df = uol_get_all(endpoint)
+    st.session_state["seznam"] = df.to_dict("records")
 
 # =========================
-# MENU
-# =========================
-with st.sidebar:
-    st.title("📋 Menu")
-
-    st.link_button(
-        "➕ Nová faktura",
-        f"https://{customer_id}.ucetnictvi.uol.cz/sales/invoices/new",
-        use_container_width=True
-    )
-
-    st.link_button(
-        "➕ Nová účtenka",
-        f"https://{customer_id}.ucetnictvi.uol.cz/sales/retails/new",
-        use_container_width=True
-    )
-
-    st.divider()
-
-    st.link_button(
-        "💳 SumUp",
-        "https://me.sumup.com/",
-        use_container_width=True
-    )
-
-
-# =========================
-# HLAVNÍ OBRAZOVKA
+# UI
 # =========================
 st.title("🧾 POKLADNA")
 
-st.markdown('<div class="big-card">', unsafe_allow_html=True)
+typ = st.radio("Typ", ["Faktura","Účtenka"], horizontal=True)
 
-typ_nacteni = st.radio(
-    "Co načíst?",
-    ["Faktura", "Účtenka"],
-    horizontal=True
-)
-
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("🔄 NAČÍST POSLEDNÍ", use_container_width=True):
-        nacti_doklad(typ_nacteni)
+    if st.button("🔄 Poslední"):
+        nacti_posledni(typ)
 
 with col2:
-    if st.button("🧹 VYMAZAT", use_container_width=True):
-        for k in ["doklad_typ", "doklad_id", "cislo", "castka", "datum"]:
-            st.session_state.pop(k, None)
-        st.rerun()
+    if st.button("📋 Seznam"):
+        nacti_seznam(typ)
 
-st.markdown('</div>', unsafe_allow_html=True)
-
+with col3:
+    if st.button("🧹 Reset"):
+        st.session_state.clear()
 
 # =========================
-# NAČTENÝ DOKLAD
+# VÝBĚR ZE SEZNAMU
+# =========================
+if "seznam" in st.session_state:
+    seznam = st.session_state["seznam"]
+
+    vyber = st.selectbox(
+        "Vyber doklad",
+        range(len(seznam)),
+        format_func=lambda i: str(seznam[i].get("public_id","doklad"))
+    )
+
+    if st.button("Načíst vybraný"):
+        _, t = endpoint_podle_typu(typ)
+        uloz(seznam[vyber], t)
+
+# =========================
+# DETAIL
 # =========================
 if "doklad_id" in st.session_state:
-    doklad_typ = st.session_state["doklad_typ"]
-    doklad_id = st.session_state["doklad_id"]
-    cislo = st.session_state["cislo"]
+    st.subheader("Doklad")
+
+    st.metric("Typ", st.session_state["doklad_typ"])
+    st.metric("Číslo", st.session_state["cislo"])
+    st.metric("Částka", format_kc(st.session_state["castka"]))
+
     castka = st.session_state["castka"]
-    datum = st.session_state["datum"]
+    doklad_id = st.session_state["doklad_id"]
 
-    st.markdown('<div class="big-card">', unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("Typ", doklad_typ)
-    c2.metric("Číslo", cislo)
-    c3.metric("Částka", format_kc(castka) if castka != "" else "nezjištěno")
-
-    st.markdown(f"### Datum: {datum}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    if doklad_typ == "Faktura":
+    if st.session_state["doklad_typ"] == "Faktura":
         url_pdf = f"https://{customer_id}.ucetnictvi.uol.cz/sales/invoices/{doklad_id}.pdf"
-        url_uol = f"https://{customer_id}.ucetnictvi.uol.cz/sales/invoices/{doklad_id}/printing"
     else:
         url_pdf = f"https://{customer_id}.ucetnictvi.uol.cz/sales/retails/{doklad_id}.pdf"
-        url_uol = f"https://{customer_id}.ucetnictvi.uol.cz/sales/retails/{doklad_id}"
 
     st.subheader("Akce")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.link_button(
-            "📄 TISK",
-            url_pdf,
-            use_container_width=True
-        )
+        st.link_button("📄 TISK", url_pdf)
 
     with col2:
-    castka_float = float(castka) if castka != "" else 0
+        castka_float = float(castka) if castka != "" else 0
 
-    st.markdown(f"""
-    <a href="sumupmerchant://pay/{castka_float}">
-        <button style="
-            width:100%;
-            height:85px;
-            font-size:28px;
-            font-weight:800;
-            border-radius:18px;
-            background:#28a745;
-            color:white;
-        ">
-            💳 ZAPLATIT {format_kc(castka)}
-        </button>
-    </a>
-    """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <a href="sumupmerchant://pay/{castka_float}">
+            <button style="
+                width:100%;
+                height:85px;
+                font-size:28px;
+                font-weight:800;
+                border-radius:18px;
+                background:#28a745;
+                color:white;
+            ">
+                💳 ZAPLATIT {format_kc(castka)}
+            </button>
+        </a>
+        """, unsafe_allow_html=True)
 
     with col3:
-    st.link_button(
-        "🔄 Otevřít SumUp",
-        "https://me.sumup.com/",
-        use_container_width=True
-    )
+        st.link_button("🔄 Otevřít SumUp", "https://me.sumup.com/")
 
 else:
-    st.warning("Zatím není načtený žádný doklad.")
+    st.warning("Žádný doklad")
