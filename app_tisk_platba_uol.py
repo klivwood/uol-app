@@ -8,6 +8,52 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown("""
+<style>
+.block-container {
+    padding-top: 1rem;
+    max-width: 1100px;
+}
+
+h1 {
+    text-align: center;
+    font-size: 46px !important;
+}
+
+h2, h3 {
+    text-align: center;
+    font-size: 30px !important;
+}
+
+.stButton > button,
+.stLinkButton > a {
+    width: 100%;
+    height: 85px;
+    font-size: 28px;
+    font-weight: 800;
+    border-radius: 18px;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 36px !important;
+    font-weight: 800;
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 20px !important;
+}
+
+.big-card {
+    background: #f6f8fb;
+    border-radius: 22px;
+    padding: 25px;
+    margin: 15px 0;
+    border: 1px solid #e1e5ea;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # =========================
 # NASTAVENÍ
 # =========================
@@ -21,6 +67,9 @@ headers = {
 }
 
 
+# =========================
+# FUNKCE
+# =========================
 def format_kc(castka):
     try:
         return f"{float(castka):,.2f} Kč".replace(",", " ")
@@ -88,77 +137,8 @@ def najdi_hodnotu(radek, moznosti, vychozi=""):
     return vychozi
 
 
-if email == "SEM_DEJ_EMAIL" or token == "SEM_DEJ_NOVY_API_TOKEN":
-    st.error("Doplň v kódu svůj UOL e-mail a nový API token.")
-    st.stop()
-
-
-# =========================
-# LEVÉ MENU
-# =========================
-with st.sidebar:
-    st.title("📋 Menu")
-
-    st.link_button(
-        "➕ Nová faktura",
-        f"https://{customer_id}.ucetnictvi.uol.cz/sales/invoices/new",
-        use_container_width=True
-    )
-
-    st.link_button(
-        "➕ Nová účtenka",
-        f"https://{customer_id}.ucetnictvi.uol.cz/sales/retails/new",
-        use_container_width=True
-    )
-
-    st.divider()
-
-    st.link_button(
-        "💳 SumUp",
-        "https://me.sumup.com/",
-        use_container_width=True
-    )
-
-    st.divider()
-
-    st.caption("Doklad vytvoř v UOL, potom se vrať sem a načti poslední doklad.")
-
-
-# =========================
-# HLAVNÍ OBRAZOVKA
-# =========================
-st.title("🧾 UOL – tisk dokladu a platba kartou")
-
-st.info(
-    "Vlevo klikni na **Nová faktura** nebo **Nová účtenka**. "
-    "Po vytvoření dokladu v UOL se vrať sem a načti poslední doklad."
-)
-
-st.subheader("🔄 Načíst hotový doklad z UOL")
-
-typ = st.radio(
-    "Co chceš načíst?",
-    ["Poslední fakturu", "Poslední účtenku"],
-    horizontal=True
-)
-
-col_a, col_b = st.columns(2)
-
-with col_a:
-    nacist = st.button("🔄 Načíst poslední doklad", use_container_width=True)
-
-with col_b:
-    vymazat = st.button("🧹 Vymazat načtený doklad", use_container_width=True)
-
-if vymazat:
-    for k in ["doklad_typ", "doklad_id", "cislo", "castka", "datum"]:
-        if k in st.session_state:
-            del st.session_state[k]
-    st.rerun()
-
-
-if nacist:
-    if typ == "Poslední fakturu":
+def nacti_doklad(typ):
+    if typ == "Faktura":
         endpoint = "sales_invoices"
         doklad_typ = "Faktura"
     else:
@@ -170,7 +150,7 @@ if nacist:
 
     if radek is None:
         st.error("Žádný doklad nebyl nalezen.")
-        st.stop()
+        return
 
     doklad_id = najdi_hodnotu(
         radek,
@@ -231,7 +211,62 @@ if nacist:
 
 
 # =========================
-# ZOBRAZENÍ DOKLADU
+# MENU
+# =========================
+with st.sidebar:
+    st.title("📋 Menu")
+
+    st.link_button(
+        "➕ Nová faktura",
+        f"https://{customer_id}.ucetnictvi.uol.cz/sales/invoices/new",
+        use_container_width=True
+    )
+
+    st.link_button(
+        "➕ Nová účtenka",
+        f"https://{customer_id}.ucetnictvi.uol.cz/sales/retails/new",
+        use_container_width=True
+    )
+
+    st.divider()
+
+    st.link_button(
+        "💳 SumUp",
+        "https://me.sumup.com/",
+        use_container_width=True
+    )
+
+
+# =========================
+# HLAVNÍ OBRAZOVKA
+# =========================
+st.title("🧾 POKLADNA")
+
+st.markdown('<div class="big-card">', unsafe_allow_html=True)
+
+typ_nacteni = st.radio(
+    "Co načíst?",
+    ["Faktura", "Účtenka"],
+    horizontal=True
+)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("🔄 NAČÍST POSLEDNÍ", use_container_width=True):
+        nacti_doklad(typ_nacteni)
+
+with col2:
+    if st.button("🧹 VYMAZAT", use_container_width=True):
+        for k in ["doklad_typ", "doklad_id", "cislo", "castka", "datum"]:
+            st.session_state.pop(k, None)
+        st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+
+# =========================
+# NAČTENÝ DOKLAD
 # =========================
 if "doklad_id" in st.session_state:
     doklad_typ = st.session_state["doklad_typ"]
@@ -240,15 +275,17 @@ if "doklad_id" in st.session_state:
     castka = st.session_state["castka"]
     datum = st.session_state["datum"]
 
-    st.divider()
-    st.subheader("📄 Načtený doklad")
+    st.markdown('<div class="big-card">', unsafe_allow_html=True)
 
-    col1, col2, col3, col4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
 
-    col1.metric("Typ", doklad_typ)
-    col2.metric("Číslo", cislo)
-    col3.metric("Částka", format_kc(castka) if castka != "" else "nezjištěno")
-    col4.metric("Datum", datum)
+    c1.metric("Typ", doklad_typ)
+    c2.metric("Číslo", cislo)
+    c3.metric("Částka", format_kc(castka) if castka != "" else "nezjištěno")
+
+    st.markdown(f"### Datum: {datum}")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if doklad_typ == "Faktura":
         url_pdf = f"https://{customer_id}.ucetnictvi.uol.cz/sales/invoices/{doklad_id}.pdf"
@@ -257,32 +294,31 @@ if "doklad_id" in st.session_state:
         url_pdf = f"https://{customer_id}.ucetnictvi.uol.cz/sales/retails/{doklad_id}.pdf"
         url_uol = f"https://{customer_id}.ucetnictvi.uol.cz/sales/retails/{doklad_id}"
 
-    st.subheader("🖨️ Tisk / kontrola / platba")
+    st.subheader("Akce")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
         st.link_button(
-            "📄 Otevřít PDF / tisk",
+            "📄 TISK",
             url_pdf,
             use_container_width=True
         )
 
     with col2:
         st.link_button(
-            "🔧 Otevřít doklad v UOL",
-            url_uol,
-            use_container_width=True
-        )
-
-    with col3:
-        st.link_button(
-            "💳 Otevřít SumUp",
+            "💳 PLATBA",
             "https://me.sumup.com/",
             use_container_width=True
         )
 
-    st.caption("Částku z načteného dokladu zadej do SumUp pro platbu kartou.")
+    st.link_button(
+        "🔧 OTEVŘÍT V UOL",
+        url_uol,
+        use_container_width=True
+    )
+
 else:
-    st.divider()
     st.warning("Zatím není načtený žádný doklad.")
+
+
