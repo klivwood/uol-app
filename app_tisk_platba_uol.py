@@ -77,13 +77,6 @@ def format_kc(castka):
         return str(castka)
 
 
-def endpoint_podle_typu(typ):
-    if typ == "Faktura":
-        return "sales_invoices", "Faktura"
-    else:
-        return "retails", "Účtenka"
-
-
 def uol_get_all(endpoint):
     vse = []
     page = 1
@@ -144,7 +137,21 @@ def najdi_hodnotu(radek, moznosti, vychozi=""):
     return vychozi
 
 
-def uloz_doklad_do_session(radek, doklad_typ):
+def nacti_doklad(typ):
+    if typ == "Faktura":
+        endpoint = "sales_invoices"
+        doklad_typ = "Faktura"
+    else:
+        endpoint = "retails"
+        doklad_typ = "Účtenka"
+
+    df = uol_get_all(endpoint)
+    radek = vyber_posledni(df)
+
+    if radek is None:
+        st.error("Žádný doklad nebyl nalezen.")
+        return
+
     doklad_id = najdi_hodnotu(
         radek,
         [
@@ -203,79 +210,6 @@ def uloz_doklad_do_session(radek, doklad_typ):
     st.success(f"Načteno: {doklad_typ} č. {cislo}")
 
 
-def nacti_doklad(typ):
-    endpoint, doklad_typ = endpoint_podle_typu(typ)
-
-    df = uol_get_all(endpoint)
-    radek = vyber_posledni(df)
-
-    if radek is None:
-        st.error("Žádný doklad nebyl nalezen.")
-        return
-
-    uloz_doklad_do_session(radek, doklad_typ)
-
-
-def priprav_popis_dokladu(radek):
-    cislo = najdi_hodnotu(
-        radek,
-        [
-            "public_id",
-            "variable_symbol",
-            "invoice_id",
-            "retail_id",
-            "sales_retail_id",
-            "gid",
-            "id",
-        ],
-        "bez čísla"
-    )
-
-    datum = najdi_hodnotu(
-        radek,
-        [
-            "issue_date",
-            "created_at",
-            "updated_at",
-        ],
-        ""
-    )
-
-    castka = najdi_hodnotu(
-        radek,
-        [
-            "total_amount",
-            "amount",
-            "price",
-            "total_price",
-            "total_price_vat_inclusive",
-        ],
-        ""
-    )
-
-    return f"{cislo} | {datum} | {format_kc(castka)}"
-
-
-def nacti_seznam_dokladu(typ):
-    endpoint, doklad_typ = endpoint_podle_typu(typ)
-
-    df = uol_get_all(endpoint)
-
-    if df.empty:
-        st.error("Žádné doklady nebyly nalezeny.")
-        return
-
-    for col in ["created_at", "updated_at", "issue_date"]:
-        if col in df.columns:
-            df = df.sort_values(col, ascending=False)
-            break
-
-    st.session_state["seznam_typ"] = typ
-    st.session_state["seznam_dokladu"] = df.to_dict("records")
-
-    st.success(f"Načten seznam: {doklad_typ}")
-
-
 # =========================
 # MENU
 # =========================
@@ -316,61 +250,19 @@ typ_nacteni = st.radio(
     horizontal=True
 )
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
     if st.button("🔄 NAČÍST POSLEDNÍ", use_container_width=True):
         nacti_doklad(typ_nacteni)
 
 with col2:
-    if st.button("📋 NAČÍST SEZNAM", use_container_width=True):
-        nacti_seznam_dokladu(typ_nacteni)
-
-with col3:
     if st.button("🧹 VYMAZAT", use_container_width=True):
-        for k in [
-            "doklad_typ",
-            "doklad_id",
-            "cislo",
-            "castka",
-            "datum",
-            "seznam_dokladu",
-            "seznam_typ"
-        ]:
+        for k in ["doklad_typ", "doklad_id", "cislo", "castka", "datum"]:
             st.session_state.pop(k, None)
         st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
-
-
-# =========================
-# VÝBĚR ZE SEZNAMU
-# =========================
-if (
-    "seznam_dokladu" in st.session_state
-    and st.session_state.get("seznam_typ") == typ_nacteni
-):
-    st.markdown('<div class="big-card">', unsafe_allow_html=True)
-
-    st.subheader("Vybrat konkrétní doklad")
-
-    seznam = st.session_state["seznam_dokladu"]
-
-    popisy = []
-    for radek in seznam:
-        popisy.append(priprav_popis_dokladu(radek))
-
-    vybrany_index = st.selectbox(
-        "Vyber doklad",
-        range(len(popisy)),
-        format_func=lambda i: popisy[i]
-    )
-
-    if st.button("✅ NAČÍST VYBRANÝ DOKLAD", use_container_width=True):
-        _, doklad_typ = endpoint_podle_typu(typ_nacteni)
-        uloz_doklad_do_session(seznam[vybrany_index], doklad_typ)
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =========================
@@ -404,7 +296,7 @@ if "doklad_id" in st.session_state:
 
     st.subheader("Akce")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.link_button(
@@ -414,19 +306,30 @@ if "doklad_id" in st.session_state:
         )
 
     with col2:
-        st.link_button(
-            "💳 PLATBA",
-            "https://me.sumup.com/",
-            use_container_width=True
-        )
+    castka_float = float(castka) if castka != "" else 0
 
+    st.markdown(f"""
+    <a href="sumupmerchant://pay/{castka_float}">
+        <button style="
+            width:100%;
+            height:85px;
+            font-size:28px;
+            font-weight:800;
+            border-radius:18px;
+            background:#28a745;
+            color:white;
+        ">
+            💳 ZAPLATIT {format_kc(castka)}
+        </button>
+    </a>
+    """, unsafe_allow_html=True)
+
+    with col3:
     st.link_button(
-        "🔧 OTEVŘÍT V UOL",
-        url_uol,
+        "🔄 Otevřít SumUp",
+        "https://me.sumup.com/",
         use_container_width=True
     )
 
 else:
     st.warning("Zatím není načtený žádný doklad.")
-
-
