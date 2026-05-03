@@ -9,8 +9,8 @@ st.title("🧾 UOL – tisk dokladu a platba kartou")
 # NASTAVENÍ
 # =========================
 customer_id = "klivwood"
-email = "klivwood@seznam.cz"
-token = "1nu4yUJkrxdaT6iyVPc8Qg"
+email = st.secrets["uol_email"]
+token = st.secrets["uol_token"]
 
 headers = {
     "Accept": "application/json",
