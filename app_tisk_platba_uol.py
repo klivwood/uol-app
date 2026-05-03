@@ -2,8 +2,11 @@ import streamlit as st
 import requests
 import pandas as pd
 
-st.set_page_config(page_title="UOL tisk a platba", layout="wide")
-st.title("🧾 UOL – tisk dokladu a platba kartou")
+st.set_page_config(
+    page_title="Pokladna",
+    page_icon="🧾",
+    layout="wide"
+)
 
 # =========================
 # NASTAVENÍ
